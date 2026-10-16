@@ -42,6 +42,11 @@ describe('picker', () => {
     }
   });
 
+  it('never returns a zero-weight item, even when random() is 0', () => {
+    const pick = pickItem({ pool: [0, 3], fresh: [], attempts: {}, focus: [], recent: [0, 0], random: () => 0 });
+    expect(pick).toBe(3);
+  });
+
   it('lists the weakest items for listening blocks', () => {
     const out = weakest([0, 3, 7], { 0: Array(10).fill(att(true)), 3: Array(10).fill(att(false)), 7: Array(10).fill(att(true)) }, 2);
     expect(out[0]).toBe(3);

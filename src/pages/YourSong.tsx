@@ -162,6 +162,7 @@ export function YourSong() {
                       type="button"
                       onClick={() => {
                         setActiveBar(i);
+                        setPlaying(false);
                         const take = engine.take();
                         playChord(take, { root: r.semi, quality: r.chord.quality }, tonicMidiFor(pick.key.pc), 0, 1.3, timbre);
                       }}

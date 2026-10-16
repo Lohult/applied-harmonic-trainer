@@ -37,12 +37,14 @@ export const pickItem = (ctx: PickContext): number => {
   const ws = itemWeights(ctx);
   const total = ws.reduce((a, b) => a + b.w, 0);
   if (total <= 0) return ctx.pool[Math.floor(rnd() * ctx.pool.length)];
+  // r is in [0, total): an item is chosen only when r falls inside its
+  // non-empty share, so zero-weight items can never be returned.
   let r = rnd() * total;
   for (const { item, w } of ws) {
+    if (w > 0 && r < w) return item;
     r -= w;
-    if (r <= 0) return item;
   }
-  return ws[ws.length - 1].item;
+  return ws.filter((x) => x.w > 0).at(-1)!.item;
 };
 
 /** Items to give listening exposure to: the weakest first. */

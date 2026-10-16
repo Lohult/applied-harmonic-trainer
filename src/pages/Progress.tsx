@@ -22,6 +22,7 @@ export function Progress() {
   const stage = useStore((s) => s.stage);
   const unlocked = useStore((s) => s.unlocked);
   const practice = useStore((s) => s.practice);
+  const mode = useStore((s) => s.settings.mode);
 
   const days = useMemo(() => {
     const out: { key: string; label: string; min: number }[] = [];
@@ -49,7 +50,8 @@ export function Progress() {
     [confusions],
   );
 
-  const label = (ex: ExerciseId, s: number) => (ex === 'degree' ? DEGREES[s].label : romanNumeral({ root: s, quality: 'power' }, 'aeolian'));
+  // Match the Ear Trainer, which names root movements in the selected mode.
+  const label = (ex: ExerciseId, s: number) => (ex === 'degree' ? DEGREES[s].label : romanNumeral({ root: s, quality: 'power' }, mode));
 
   return (
     <>

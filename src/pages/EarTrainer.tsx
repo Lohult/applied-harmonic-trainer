@@ -61,15 +61,27 @@ export function EarTrainer() {
 
   useEffect(() => () => engine.stop(), []);
 
-  // Changing exercise or stage starts a fresh round.
-  useEffect(() => {
+  /** Abandon the current round. Called when the user switches exercise or stage. */
+  const resetRound = () => {
     engine.stop();
     listenAbort.current = true;
     setPhase('idle');
     setRound(null);
     setResult(null);
+    setListenItem(null);
     focus.current = [];
-  }, [exercise, stageIdx]);
+  };
+
+  const chooseExercise = (ex: ExerciseId) => {
+    if (ex === exercise) return;
+    resetRound();
+    setExercise(ex);
+  };
+
+  const chooseStage = (idx: number) => {
+    resetRound();
+    setStage(exercise, idx);
+  };
 
   const labelFor = useCallback(
     (semi: Semi, mode: ModeId) => (exercise === 'degree' ? DEGREES[semi].label : romanNumeral({ root: semi, quality: 'power' }, mode)),
@@ -150,6 +162,10 @@ export function EarTrainer() {
     });
   }, [attempts, playRound, roundCount, settings.mode, settings.rotateKey, settings.timbre, stage]);
 
+  // While the context plays, the take holds the timer that opens answering;
+  // starting another take would cancel it and strand the round.
+  const canReplay = phase === 'answering' || phase === 'feedback';
+
   const answer = useCallback(
     (semi: Semi) => {
       if (!round || phase !== 'answering' || !startedAt.current) return;
@@ -228,7 +244,7 @@ export function EarTrainer() {
         e.preventDefault();
         if (phase === 'idle' || phase === 'feedback') next();
       } else if (e.key === 'r' || e.key === 'R') {
-        if (round && phase !== 'listen') playTargetOnly(round);
+        if (round && canReplay) playTargetOnly(round);
       } else if (phase === 'answering') {
         const idx = ANSWER_KEYS.indexOf(e.key);
         if (idx >= 0) {
@@ -239,7 +255,7 @@ export function EarTrainer() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [answer, next, phase, playTargetOnly, round, stage.pool]);
+  }, [answer, canReplay, next, phase, playTargetOnly, round, stage.pool]);
 
   // ---- derived view state --------------------------------------------------
 
@@ -330,7 +346,7 @@ export function EarTrainer() {
             <Segmented
               label="Exercise"
               value={exercise}
-              onChange={setExercise}
+              onChange={chooseExercise}
               options={[
                 { id: 'degree', label: 'Scale degrees' },
                 { id: 'movement', label: 'Root movement' },
@@ -340,7 +356,7 @@ export function EarTrainer() {
               Stage
               <select
                 value={stageIdx}
-                onChange={(e) => setStage(exercise, Number(e.target.value))}
+                onChange={(e) => chooseStage(Number(e.target.value))}
                 className="bg-raised text-ink border border-edge rounded-lg px-2.5 min-h-9 text-[13px]"
               >
                 {stages.map((s, i) => (
@@ -380,7 +396,7 @@ export function EarTrainer() {
                 {phase === 'idle' ? 'Play' : phase === 'feedback' ? 'Next' : 'Replay all'}
               </PrimaryButton>
             )}
-            <GhostButton onClick={() => round && playTargetOnly(round)} disabled={!round || phase === 'listen'}>
+            <GhostButton onClick={() => round && playTargetOnly(round)} disabled={!round || !canReplay}>
               <RotateCcw size={16} aria-hidden="true" /> {exercise === 'degree' ? 'Note again' : 'Chord again'}
             </GhostButton>
             <GhostButton
@@ -389,7 +405,7 @@ export function EarTrainer() {
                 const take = engine.take();
                 take.drone(tonicMidiFor(keyById(round.keyId).pc) - 12, 0, 4);
               }}
-              disabled={!round || phase === 'listen'}
+              disabled={!round || !canReplay}
             >
               <Headphones size={16} aria-hidden="true" /> Drone only
             </GhostButton>

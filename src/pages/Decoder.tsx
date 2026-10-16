@@ -40,7 +40,8 @@ const fromSong = (song: SavedSong): Item | null => {
   };
 };
 
-const QUIZ_ROOTS: Semi[] = [0, 1, 2, 3, 5, 7, 8, 9, 10];
+/** Common rock/metal roots, always offered as quiz answers. */
+const COMMON_ROOTS: Semi[] = [0, 1, 2, 3, 5, 7, 8, 9, 10];
 
 export function Decoder() {
   const settings = useStore((s) => s.settings);
@@ -55,7 +56,10 @@ export function Decoder() {
   const key = keyById(keyId);
   const mode: ModeId = item.mode;
 
+  // `active` is the bar the user selected (and the one a quiz answer goes to);
+  // `sounding` is the bar currently playing during playback.
   const [active, setActive] = useState(0);
+  const [sounding, setSounding] = useState<number | null>(null);
   const [voicing, setVoicing] = useState<'power' | 'triad'>('power');
   const [quiz, setQuiz] = useState(false);
   const [guesses, setGuesses] = useState<Record<number, Semi>>({});
@@ -67,10 +71,11 @@ export function Decoder() {
 
   useEffect(() => {
     setActive(0);
+    setSounding(null);
     setGuesses({});
     engine.stop();
     setPlaying(false);
-  }, [itemId]);
+  }, [item.id]);
   useEffect(() => () => engine.stop(), []);
 
   const timbre: Timbre = settings.timbre === 'random' ? 'overdrive' : settings.timbre;
@@ -84,12 +89,15 @@ export function Decoder() {
     const schedule = (offset: number) => {
       item.chords.forEach((c, i) => {
         playChord(take, shapeOf(c), tonic, offset + i * dur, dur, timbre);
-        take.at(offset + i * dur, () => setActive(i));
+        take.at(offset + i * dur, () => setSounding(i));
       });
       const end = offset + item.chords.length * dur;
       take.at(end - 0.05, () => {
         if (loopRef.current && !take.isStopped) schedule(end);
-        else setPlaying(false);
+        else {
+          setPlaying(false);
+          setSounding(null);
+        }
       });
     };
     schedule(0);
@@ -97,6 +105,7 @@ export function Decoder() {
 
   const playOne = (i: number) => {
     setActive(i);
+    setSounding(null);
     const take = engine.take();
     setPlaying(false);
     playChord(take, shapeOf(item.chords[i]), tonicMidiFor(key.pc), 0, 1.4, timbre);
@@ -105,11 +114,17 @@ export function Decoder() {
   const stop = () => {
     engine.stop();
     setPlaying(false);
+    setSounding(null);
   };
 
   const hidden = (i: number) => quiz && guesses[i] === undefined;
   const allGuessed = item.chords.every((_, i) => guesses[i] !== undefined);
-  const ac = item.chords[active];
+  // Clamp: the item can change under us (e.g. a saved song is deleted).
+  const last = item.chords.length - 1;
+  const selected = Math.min(active, last);
+  const shown = Math.min(sounding ?? selected, last);
+  const ac = item.chords[shown];
+  const quizRoots = Array.from(new Set([...COMMON_ROOTS, ...item.chords.map((c) => c.root)])).sort((a, b) => a - b);
   const activeShape = shapeOf(ac);
   const numeral = (c: ProgressionChord) => romanNumeral(voicing === 'power' ? { root: c.root, quality: 'power' } : { root: c.root, quality: c.triad }, mode);
   const chordName = (c: ProgressionChord) => {
@@ -124,11 +139,11 @@ export function Decoder() {
       <section aria-label="Fretboard" className="flex flex-col gap-2.5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span className="font-semibold">
-            {hidden(active) ? `Bar ${active + 1}` : `${chordName(ac)} (${numeral(ac)})`} over {key.label} {MODES[mode].name}
+            {hidden(shown) ? `Bar ${shown + 1}` : `${chordName(ac)} (${numeral(ac)})`} over {key.label} {MODES[mode].name}
           </span>
           <span className="text-muted text-[13px]">Bright dots are the chord tones. Faded dots are the rest of the scale.</span>
         </div>
-        <Fretboard keyId={keyId} mode={mode} tuningId={settings.tuningId} labels={settings.labels} emphasis={hidden(active) ? [0] : chordTones(activeShape)} timbre={timbre} />
+        <Fretboard keyId={keyId} mode={mode} tuningId={settings.tuningId} labels={settings.labels} emphasis={hidden(shown) ? [0] : chordTones(activeShape)} timbre={timbre} />
       </section>
 
       <div className="flex flex-wrap gap-5 items-start">
@@ -151,7 +166,10 @@ export function Decoder() {
                   <span className="font-mono text-xs text-muted">{p.chords.map((c) => romanNumeral({ root: c.root, quality: c.triad }, p.mode)).join(' – ')}</span>
                 </button>
                 {p.saved && (
-                  <GhostButton ariaLabel={`Delete ${p.title}`} onClick={() => deleteSong(p.id)} className="!px-3">
+                  <GhostButton ariaLabel={`Delete ${p.title}`} onClick={() => {
+                      if (p.id === item.id) setItemId(PRESETS[0].id);
+                      deleteSong(p.id);
+                    }} className="!px-3">
                     <Trash2 size={14} aria-hidden="true" />
                   </GhostButton>
                 )}
@@ -223,7 +241,8 @@ export function Decoder() {
 
             <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(item.chords.length, 4)}, minmax(0, 1fr))` }}>
               {item.chords.map((c, i) => {
-                const isActive = i === active;
+                const isActive = i === shown;
+                const isAsked = quiz && !allGuessed && i === selected && i !== shown;
                 const g = guesses[i];
                 const tones = chordTones(shapeOf(c));
                 return (
@@ -232,7 +251,7 @@ export function Decoder() {
                     type="button"
                     onClick={() => playOne(i)}
                     aria-label={`Bar ${i + 1}${hidden(i) ? '' : `: ${chordName(c)}, ${numeral(c)}`}`}
-                    className={`flex flex-col items-center gap-1.5 min-h-[150px] px-2 py-3.5 rounded-xl cursor-pointer ${isActive ? 'bg-active border-2 border-gold' : 'bg-bar border border-line-soft hover:border-edge'}`}
+                    className={`flex flex-col items-center gap-1.5 min-h-[150px] px-2 py-3.5 rounded-xl cursor-pointer ${isActive ? 'bg-active border-2 border-gold' : isAsked ? 'bg-bar border-2 border-dashed border-gold' : 'bg-bar border border-line-soft hover:border-edge'}`}
                   >
                     <span className="font-mono text-[11px] text-muted">Bar {i + 1}</span>
                     <span className={`text-[26px] font-bold ${quiz && g !== undefined ? (g === c.root ? 'text-ok' : 'text-warn') : 'text-ink'}`}>
@@ -254,14 +273,14 @@ export function Decoder() {
 
             {quiz && !allGuessed && (
               <div className="flex flex-col gap-2.5 p-3.5 rounded-xl bg-bar border border-line-soft">
-                <span className="font-semibold">Bar {active + 1}: which chord is it, relative to i?</span>
+                <span className="font-semibold">Bar {selected + 1}: which chord is it, relative to i?</span>
                 <div className="flex flex-wrap gap-2">
-                  {QUIZ_ROOTS.map((r) => (
+                  {quizRoots.map((r) => (
                     <button
                       key={r}
                       type="button"
                       onClick={() => {
-                        const g = { ...guesses, [active]: r };
+                        const g = { ...guesses, [selected]: r };
                         setGuesses(g);
                         const nextIdx = item.chords.findIndex((_, i) => g[i] === undefined);
                         if (nextIdx >= 0) setActive(nextIdx);

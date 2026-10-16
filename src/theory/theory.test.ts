@@ -85,3 +85,12 @@ describe('analysis', () => {
     expect(best.mode).toBe('harmonic');
   });
 });
+
+describe('slash chords', () => {
+  it('keeps the quality of the chord above the slash', () => {
+    const { chords } = parseProgression('C/G F/A Am/C');
+    expect(chords.map((c) => c.quality)).toEqual(['major', 'major', 'minor']);
+    expect(chords.map((c) => c.rootPc)).toEqual([0, 5, 9]);
+    expect(chords[0].pcs.sort((a, b) => a - b)).toEqual([0, 4, 7]);
+  });
+});

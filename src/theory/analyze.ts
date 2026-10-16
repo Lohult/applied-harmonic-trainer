@@ -1,4 +1,4 @@
-import { Chord } from 'tonal';
+import { Chord, Note } from 'tonal';
 import { characterNotes, DEGREES, KEYS, type KeyDef, MODES, type ModeId, mod12, type Semi } from './core';
 import { type Quality, romanNumeral } from './harmony';
 import { DEGREE_VIBES } from './descriptors';
@@ -28,8 +28,6 @@ const qualityOf = (intervals: string[]): Quality => {
   return 'power';
 };
 
-const NOTE_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-
 /** Parse a space- or bar-separated list of chord symbols or bare roots. */
 export const parseProgression = (text: string): ParseResult => {
   const chords: ParsedChord[] = [];
@@ -42,7 +40,7 @@ export const parseProgression = (text: string): ParseResult => {
     const bare = /^[a-g](#|b)?$/.test(tok);
     tok = tok.charAt(0).toUpperCase() + tok.slice(1);
     if (bare) {
-      const pc = mod12(NOTE_PC[tok[0]] + (tok[1] === '#' ? 1 : tok[1] === 'b' ? -1 : 0));
+      const pc = Note.chroma(tok);
       chords.push({ input: raw, symbol: raw, rootPc: pc, quality: 'power', pcs: [pc] });
       continue;
     }
@@ -51,13 +49,12 @@ export const parseProgression = (text: string): ParseResult => {
       errors.push(raw);
       continue;
     }
-    const rootPc = mod12(NOTE_PC[c.tonic[0]] + (c.tonic.slice(1).split('').reduce((a, ch) => a + (ch === '#' ? 1 : ch === 'b' ? -1 : 0), 0)));
-    const pcs = c.notes.map((n) => {
-      const base = NOTE_PC[n[0]];
-      const alt = n.slice(1).split('').reduce((a, ch) => a + (ch === '#' ? 1 : ch === 'b' ? -1 : 0), 0);
-      return mod12(base + alt);
-    });
-    chords.push({ input: raw, symbol: raw, rootPc, quality: qualityOf(c.intervals), pcs });
+    // For slash chords tonal measures intervals from the bass, so take the
+    // quality from the chord above the slash; the bass stays in `pcs`.
+    const [upper] = tok.split('/');
+    const quality = qualityOf(upper === tok ? c.intervals : Chord.get(upper).intervals);
+    const pcs = Array.from(new Set(c.notes.map((n) => Note.chroma(n))));
+    chords.push({ input: raw, symbol: raw, rootPc: Note.chroma(c.tonic), quality, pcs });
   }
   return { chords, errors };
 };
